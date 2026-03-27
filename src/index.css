@@ -1,0 +1,340 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  z-index: 0;
+}
+
+.dragging-overlay {
+  cursor: grabbing !important;
+}
+
+/* Cut-out overlay styling */
+.leaflet-interactive.cutout-overlay {
+  cursor: grab;
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,0.5));
+  transition: filter 0.15s ease;
+}
+
+.leaflet-interactive.cutout-overlay:hover {
+  filter: drop-shadow(0 4px 12px rgba(0,0,0,0.7));
+}
+
+.leaflet-interactive.cutout-overlay:active {
+  cursor: grabbing;
+}
+
+.leaflet-interactive.cutout-selected {
+  filter: drop-shadow(0 4px 16px rgba(59,130,246,0.6)) drop-shadow(0 2px 6px rgba(0,0,0,0.5));
+}
+
+/* Overlay name label */
+.overlay-label {
+  background: none;
+  border: none;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+.overlay-label-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  pointer-events: none;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.overlay-label-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: white;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.8);
+  letter-spacing: 0.02em;
+}
+
+.overlay-label-area {
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.75);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.9);
+}
+
+/* Detection node markers */
+.detection-node-marker {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.detection-node-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  position: relative;
+  z-index: 2;
+}
+
+/* 1-mile geographic pulse ring on Leaflet SVG */
+.node-pulse-ring {
+  animation: geoPulse 3s ease-out infinite;
+}
+
+@keyframes geoPulse {
+  0% { stroke-opacity: 0.6; fill-opacity: 0.12; }
+  50% { stroke-opacity: 0.3; fill-opacity: 0.06; }
+  100% { stroke-opacity: 0; fill-opacity: 0; }
+}
+
+/* Coverage ring styling */
+.coverage-ring {
+  transition: fill-opacity 0.3s ease, opacity 0.3s ease;
+}
+
+.coverage-ring:hover {
+  fill-opacity: 0.25 !important;
+  opacity: 1 !important;
+}
+
+/* Placing mode cursor */
+.leaflet-container.placing-mode {
+  cursor: crosshair !important;
+}
+
+.leaflet-container.placing-mode .leaflet-interactive {
+  cursor: crosshair !important;
+}
+
+/* Sensitive site label markers used in animation */
+.site-label-marker {
+  pointer-events: none;
+}
+
+.site-label-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+}
+
+.site-label-text {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  line-height: 1.3;
+}
+
+/* Response timeline panel */
+.rt-overlay {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1001;
+  background: rgba(15, 15, 25, 0.92);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  padding: 10px 12px;
+  min-width: 300px;
+  max-width: 380px;
+  pointer-events: none;
+  font-family: ui-monospace, monospace;
+}
+
+.rt-overlay:empty {
+  display: none;
+}
+
+.rt-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+
+.rt-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 6px;
+}
+
+.rt-id {
+  font-size: 10px;
+  font-weight: 700;
+  width: 58px;
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
+.rt-bars {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rt-phase {
+  position: relative;
+  height: 14px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.rt-phase span {
+  position: relative;
+  z-index: 2;
+  font-size: 9px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.7);
+  padding: 0 4px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+.rt-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.rt-phase.done .rt-fill { opacity: 0.8; }
+.rt-phase.active .rt-fill { opacity: 0.6; }
+.rt-phase.done span { color: rgba(255,255,255,0.9); }
+.rt-phase.active span { color: #fff; }
+
+.rt-more {
+  font-size: 9px;
+  color: rgba(255,255,255,0.3);
+  text-align: center;
+  margin-top: 4px;
+}
+
+/* DFR toggle highlight */
+.da-dfr-active {
+  color: #00aaff !important;
+  font-weight: bold;
+}
+
+/* Response parameter sliders */
+.da-response-params {
+  display: flex;
+  gap: 12px;
+  padding: 4px 8px;
+  flex-wrap: wrap;
+}
+
+.da-response-params label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: rgba(255,255,255,0.6);
+  white-space: nowrap;
+}
+
+.da-response-params input[type="range"] {
+  width: 60px;
+  height: 4px;
+  accent-color: #10b981;
+}
+
+/* Animation captions */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInDelay {
+  0% { opacity: 0; transform: translateY(8px); }
+  30% { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.6s ease-out both;
+}
+
+.animate-fade-in-delay {
+  animation: fadeInDelay 0.9s ease-out both;
+}
+
+/* ── Drone Animation Overlay ── */
+.da-overlay {
+  position: absolute; bottom: 0; left: 0; right: 0; z-index: 1000;
+  pointer-events: none;
+}
+.da-hud {
+  position: absolute; bottom: 52px; left: 12px;
+  background: rgba(10,10,10,0.88); border: 1px solid #333; border-radius: 6px;
+  padding: 8px 14px; font-family: 'SF Mono','Fira Code',monospace; font-size: 11px;
+  color: #eee; min-width: 240px; pointer-events: auto;
+}
+.da-clock { font-size: 16px; font-weight: 700; color: #ff6b35; }
+.da-event { font-size: 12px; color: #999; margin-bottom: 4px; }
+.da-gc { margin: 6px 0; padding: 6px 0; border-top: 1px solid #333; border-bottom: 1px solid #333; }
+.gc-line { display: flex; justify-content: space-between; padding: 1px 0; }
+.gc-l { color: #888; }
+.gc-v { font-weight: 700; }
+.gc-v.countdown { color: #ffab00; }
+.gc-v.active { color: #ff4444; }
+.gc-v.quarter { color: #00e5ff; font-size: 14px; }
+.gc-v.dim { color: #888; }
+.gc-bars { display: flex; gap: 3px; margin-top: 4px; }
+.gc-bar { flex: 1; height: 5px; background: #333; border-radius: 3px; overflow: hidden; }
+.gc-fill { height: 100%; background: #ff6b35; border-radius: 3px; }
+.gc-labels { display: flex; gap: 3px; }
+.gc-labels span { flex: 1; text-align: center; font-size: 9px; color: #666; }
+.da-stats { display: flex; gap: 12px; font-size: 11px; color: #999; margin-top: 4px; }
+.da-stats b { color: #eee; }
+.da-emerg { color: #ff4444; font-weight: 700; }
+.da-tfr { color: #ff4444; font-weight: 700; }
+.da-win { color: #666; }
+
+.da-controls {
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(10,10,10,0.92); border-top: 1px solid #333;
+  padding: 6px 12px; pointer-events: auto;
+  font-family: 'SF Mono','Fira Code',monospace; font-size: 12px; color: #eee;
+}
+.da-controls button {
+  background: #1a1a1a; border: 1px solid #555; border-radius: 4px;
+  color: #eee; padding: 4px 10px; cursor: pointer; font-size: 14px;
+}
+.da-controls button:hover { background: #333; }
+.da-slider { flex: 1; accent-color: #ff6b35; cursor: pointer; }
+.da-speed {
+  background: #1a1a1a; color: #eee; border: 1px solid #555; border-radius: 3px;
+  padding: 2px 6px; font-size: 11px; font-family: inherit;
+}
+.da-toggle { font-size: 11px; color: #999; cursor: pointer; white-space: nowrap; }
+.da-toggle input { accent-color: #ff6b35; vertical-align: middle; margin-right: 3px; }
