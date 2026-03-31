@@ -1,5 +1,13 @@
 // ── Step definition types ───────────────────────────────────────
 
+export interface CoverageNodeEntry {
+  boundaryKey: string;
+  radiusMiles: number;
+  minOverlap: number;
+}
+
+export type CoverageNodeAction = CoverageNodeEntry | CoverageNodeEntry[];
+
 export interface StepDef {
   caption?: string;
   sub?: string;
@@ -14,6 +22,9 @@ export interface StepDef {
   hideNodes?: boolean;
   revealNodes?: boolean;
   waitAfter?: number;
+  showCoverageNodes?: CoverageNodeAction;
+  clearCoverageNodes?: boolean;
+  showCoverageTooltip?: boolean;
 }
 
 export interface AddAction {
@@ -174,6 +185,8 @@ export function buildFlagshipScript(ctx: ScriptContext): StepDef[] {
   const njSide = ctx.sideOffsets.newJersey;
   const nySide = ctx.sideOffsets.nyState;
 
+  const COV = (key: string): CoverageNodeEntry => ({ boundaryKey: key, radiusMiles: 2, minOverlap: 2 });
+
   return [
     // ── 1  Start on UF Campus — show nodes ──
     {
@@ -184,20 +197,28 @@ export function buildFlagshipScript(ctx: ScriptContext): StepDef[] {
       flyTo: { lat: bhg.lat, lng: bhg.lng, zoom: 14, duration: 2 },
       waitAfter: 2000,
     },
-    // ── 2  Zoom to Gainesville city — nodes still visible ──
+    // ── 2  Zoom to Gainesville city ──
     {
       caption: 'City of Gainesville',
       sub: '63 sq mi',
       remove: ['campus_intro'],
       add: [{ tag: 'gvl_intro', name: 'Gainesville', key: 'gainesville', color: OVERLAY_COLORS.gainesville, opacity: 0.2 }],
       flyTo: { lat: bhg.lat, lng: bhg.lng, zoom: 12, duration: 2.5 },
-      waitAfter: 1500,
+      waitAfter: 1000,
     },
-    // ── 3  Zoom to Florida — hide nodes ──
+    // ── Gainesville coverage ──
+    {
+      caption: 'Gainesville Coverage Network',
+      sub: '15 sensor nodes — full city detection coverage',
+      hideNodes: true,
+      showCoverageNodes: COV('gainesville'),
+      waitAfter: 3000,
+    },
+    // ── 3  Zoom to Florida ──
     {
       caption: 'Florida',
       sub: '65,758 sq mi',
-      hideNodes: true,
+      clearCoverageNodes: true,
       remove: ['gvl_intro'],
       add: [{ tag: 'fl', name: 'Florida', key: 'florida', color: OVERLAY_COLORS.florida, opacity: 0.4 }],
       flyTo: { lat: flLat, lng: flLng, zoom: 6, duration: 2.5 },
@@ -221,7 +242,7 @@ export function buildFlagshipScript(ctx: ScriptContext): StepDef[] {
       ],
       waitAfter: 4000,
     },
-    // ── 6  NJ slides back ──
+    // ── 6  NJ slides back to real position ──
     {
       caption: 'New Jersey',
       sub: 'Returning to its real position',
@@ -229,7 +250,18 @@ export function buildFlagshipScript(ctx: ScriptContext): StepDef[] {
       animate: [{ tag: 'nj', fromLat: njSide.lat, fromLng: njSide.lng, toLat: 0, toLng: 0, duration: 2000 }],
       waitAfter: 500,
     },
-    // ── 7  NY appears at comparison slot directly ──
+    // ── NJ coverage ──
+    {
+      caption: 'New Jersey Coverage',
+      sub: 'Detection network across the drone mystery state',
+      showCoverageNodes: COV('newJersey'),
+      waitAfter: 3000,
+    },
+    {
+      clearCoverageNodes: true,
+      waitAfter: 300,
+    },
+    // ── 7  NY appears side-by-side ──
     {
       caption: 'New York',
       sub: '54,556 sq mi — side by side at the same latitude',
@@ -238,7 +270,7 @@ export function buildFlagshipScript(ctx: ScriptContext): StepDef[] {
       flyTo: { lat: flLat, lng: flLng + 4, zoom: 5, duration: 2.5 },
       waitAfter: 1500,
     },
-    // ── 9  NY + FL site labels ──
+    // ── NY + FL site labels ──
     {
       caption: 'The Same Vulnerabilities',
       sub: 'Military bases, VIP properties, airports — everywhere',
@@ -248,16 +280,38 @@ export function buildFlagshipScript(ctx: ScriptContext): StepDef[] {
       ],
       waitAfter: 4000,
     },
+    // ── FL + NY side-by-side coverage ──
+    {
+      caption: 'Side-by-Side Coverage',
+      sub: 'Detection networks across both states simultaneously',
+      clearMarkers: true,
+      showCoverageNodes: [COV('florida'), COV('nyState')],
+      waitAfter: 3500,
+    },
+    {
+      clearCoverageNodes: true,
+      waitAfter: 300,
+    },
     // ── Manhattan on shifted NY ──
     {
       caption: 'Manhattan',
       sub: '23 sq mi — the island at the center of it all',
-      clearMarkers: true,
       add: [{ tag: 'manhat', name: 'Manhattan', key: 'manhattan', color: OVERLAY_COLORS.manhattan, opacity: 0.7, offLat: nySide.lat, offLng: nySide.lng }],
       flyTo: { lat: flLat, lng: flLng + 8, zoom: 7, duration: 2 },
-      waitAfter: 2000,
+      waitAfter: 1500,
     },
-    // ── Zoom to Mar-a-Lago with Manhattan shifted beside it ──
+    // ── Manhattan coverage ──
+    {
+      caption: 'Manhattan Coverage',
+      sub: '23 sq mi — covered by a handful of nodes',
+      showCoverageNodes: COV('manhattan'),
+      waitAfter: 3000,
+    },
+    {
+      clearCoverageNodes: true,
+      waitAfter: 300,
+    },
+    // ── Zoom to Mar-a-Lago ──
     {
       caption: 'Mar-a-Lago',
       sub: 'Palm Beach, Florida',
@@ -271,7 +325,6 @@ export function buildFlagshipScript(ctx: ScriptContext): StepDef[] {
       add: [{ tag: 'manhat_cmp', name: 'Manhattan', key: 'manhattan', color: OVERLAY_COLORS.manhattan, opacity: 0.35, ...offTo(ctx, 'manhattan', 26.677, -80.037 + 0.08) }],
       waitAfter: 3500,
     },
-    // ── Remove Manhattan comparison, show Mar-a-Lago detail ──
     {
       sub: '~17 acres of restricted airspace',
       remove: ['manhat_cmp'],
@@ -283,16 +336,27 @@ export function buildFlagshipScript(ctx: ScriptContext): StepDef[] {
       sub: '10 nautical mile no-fly zone — active during presidential visits',
       add: [{ tag: 'malTFR', name: 'Mar-a-Lago TFR', key: 'malTFR', color: OVERLAY_COLORS.malTFR, opacity: 0.12 }],
       flyTo: { lat: 26.677, lng: -80.037, zoom: 11, duration: 2 },
-      waitAfter: 2500,
+      waitAfter: 2000,
     },
-    // ── PBI 5 NM No-UAS Zone ──
+    // ── TFR coverage ──
+    {
+      caption: 'TFR Coverage Network',
+      sub: 'Sensor nodes filling the 10 NM no-fly zone',
+      showCoverageNodes: COV('malTFR'),
+      waitAfter: 3000,
+    },
+    {
+      clearCoverageNodes: true,
+      waitAfter: 300,
+    },
+    // ── PBI No-UAS Zone ──
     {
       caption: 'Palm Beach International Airport',
       sub: '5 nautical mile FAA no-UAS zone — overlapping the TFR',
       add: [{ tag: 'pbiNoUAS', name: 'PBI No-UAS Zone', key: 'pbiNoUAS', color: OVERLAY_COLORS.pbiNoUAS, opacity: 0.15 }],
       waitAfter: 3000,
     },
-    // ── Remove airspace layers, move to BHG ──
+    // ── Move to BHG ──
     {
       caption: 'Moving to Gainesville',
       sub: 'Bringing it to Ben Hill Griffin Stadium',
@@ -312,9 +376,20 @@ export function buildFlagshipScript(ctx: ScriptContext): StepDef[] {
       sub: '3 nautical mile game-day TFR — The Swamp',
       add: [{ tag: 'bhgTFR', name: 'BHG TFR', key: 'bhgTFR', color: OVERLAY_COLORS.bhgTFR, opacity: 0.12 }],
       flyTo: { lat: bhg.lat, lng: bhg.lng, zoom: 13, duration: 2 },
+      waitAfter: 2000,
+    },
+    // ── BHG TFR coverage ──
+    {
+      caption: 'Game-Day TFR Coverage',
+      sub: 'Detection nodes across the 3 NM restricted zone',
+      showCoverageNodes: COV('bhgTFR'),
       waitAfter: 3000,
     },
-    // ── Remove TFR, keep BHG reference, show campus ──
+    {
+      clearCoverageNodes: true,
+      waitAfter: 300,
+    },
+    // ── Campus ──
     {
       caption: 'University of Florida Campus',
       sub: 'West University Ave to Archer Rd · 34th St to 13th St',
@@ -323,7 +398,7 @@ export function buildFlagshipScript(ctx: ScriptContext): StepDef[] {
       flyTo: { lat: bhg.lat, lng: bhg.lng, zoom: 14, duration: 1.5 },
       waitAfter: 2000,
     },
-    // ── White House — placed SE of BHG on campus ──
+    // ── White House ──
     {
       caption: 'The White House',
       sub: '18 acres — fits inside the UF campus',
@@ -331,28 +406,28 @@ export function buildFlagshipScript(ctx: ScriptContext): StepDef[] {
       flyTo: { lat: bhg.lat, lng: bhg.lng, zoom: 15, duration: 1.5 },
       waitAfter: 2000,
     },
-    // ── Vatican City — placed SW on campus ──
+    // ── Vatican City ──
     {
       caption: 'Vatican City',
       sub: '0.17 sq mi — the world\'s smallest country, inside the campus',
       add: [{ tag: 'vc', name: 'Vatican City', key: 'vaticanCity', color: OVERLAY_COLORS.vaticanCity, opacity: 0.65, ...offTo(ctx, 'vaticanCity', 29.641, -82.360) }],
       waitAfter: 2000,
     },
-    // ── Brickell — placed W of BHG on campus ──
+    // ── Brickell ──
     {
       caption: 'Brickell, Miami',
       sub: '"Wall Street South" — all of it fits on campus',
       add: [{ tag: 'brickell', name: 'Brickell', key: 'brickell', color: OVERLAY_COLORS.brickell, opacity: 0.6, ...offTo(ctx, 'brickell', 29.645, -82.340) }],
       waitAfter: 2000,
     },
-    // ── 18  All small sites on campus — hold ──
+    // ── All small sites ──
     {
       caption: 'One Campus',
       sub: 'The White House, Mar-a-Lago, Vatican City, and Brickell — all fit inside UF',
       flyTo: { lat: bhg.lat, lng: bhg.lng, zoom: 15, duration: 1.5 },
       waitAfter: 3000,
     },
-    // ── 19  Clear small overlays, continue with bigger comparisons ──
+    // ── Scaling up ──
     {
       caption: 'Scaling Up',
       sub: 'Now for the bigger picture',
@@ -367,22 +442,33 @@ export function buildFlagshipScript(ctx: ScriptContext): StepDef[] {
       add: [{ tag: 'metlife', name: 'MetLife Stadium', key: 'metlife', color: OVERLAY_COLORS.metlife, opacity: 0.65, ...off(ctx, 'metlife') }],
       waitAfter: 2500,
     },
-    // ── Bergen County — MetLife's county ──
+    // ── Bergen County ──
     {
       caption: 'Bergen County',
       sub: 'Where MetLife Stadium sits — 247 sq mi of the drone sighting zone',
       add: [{ tag: 'bergenCo', name: 'Bergen County', key: 'bergenCo', color: OVERLAY_COLORS.bergenCo, opacity: 0.25, ...off(ctx, 'bergenCo') }],
       flyTo: { lat: bhg.lat, lng: bhg.lng, zoom: 11, duration: 2 },
+      waitAfter: 2000,
+    },
+    // ── Bergen County coverage ──
+    {
+      caption: 'Bergen County Coverage',
+      sub: 'Detection network across the drone sighting zone',
+      showCoverageNodes: COV('bergenCo'),
       waitAfter: 3000,
     },
-    // ── Clear medium overlays before city comparisons ──
+    {
+      clearCoverageNodes: true,
+      waitAfter: 300,
+    },
+    // ── City comparisons ──
     {
       caption: 'City Scale',
       sub: 'Now comparing entire cities',
       remove: ['metlife', 'bergenCo'],
       waitAfter: 1000,
     },
-    // ── Gainesville city boundary — at real position ──
+    // ── Gainesville ──
     {
       caption: 'City of Gainesville',
       sub: '63 sq mi',
@@ -390,20 +476,27 @@ export function buildFlagshipScript(ctx: ScriptContext): StepDef[] {
       flyTo: { lat: bhg.lat, lng: bhg.lng, zoom: 11, duration: 2 },
       waitAfter: 1500,
     },
-    // ── Miami tucked to the right edge of Gainesville ──
+    // ── Miami ──
     {
       caption: 'City of Miami',
       sub: '~56 sq mi — side by side with Gainesville\'s 63 sq mi',
       add: [{ tag: 'miami', name: 'Miami', key: 'miami', color: OVERLAY_COLORS.miami, opacity: 0.25, ...offTo(ctx, 'miami', bhg.lat - 0.2, bhg.lng) }],
-      waitAfter: 2500,
+      waitAfter: 2000,
     },
-    // ── NYC overlaid on both ──
+    // ── Gainesville + Miami coverage ──
+    {
+      caption: 'Dual City Coverage',
+      sub: 'Detection networks covering both Gainesville and Miami',
+      showCoverageNodes: [COV('gainesville'), COV('miami')],
+      waitAfter: 3000,
+    },
+    // ── NYC overlaid — keep Gainesville + Miami coverage visible ──
     {
       caption: 'New York City',
-      sub: '302 sq mi — all 5 boroughs overlaid on Gainesville and Miami',
+      sub: '302 sq mi — all 5 boroughs overlaid, Gainesville and Miami coverage still visible',
       add: [{ tag: 'nyc', name: 'New York City', key: 'nycMetro', color: OVERLAY_COLORS.nycMetro, opacity: 0.15, ...off(ctx, 'nycMetro') }],
       flyTo: { lat: bhg.lat, lng: bhg.lng, zoom: 10, duration: 2 },
-      waitAfter: 2500,
+      waitAfter: 3000,
     },
     // ── Borough comparisons ──
     {
@@ -413,9 +506,10 @@ export function buildFlagshipScript(ctx: ScriptContext): StepDef[] {
     },
     {
       sub: 'Queens alone is 109 sq mi — larger than Miami and Gainesville combined',
+      clearCoverageNodes: true,
       waitAfter: 3000,
     },
-    // ── 23  Fly to LA ──
+    // ── Fly to LA ──
     {
       caption: 'Los Angeles 2028',
       sub: 'The next Olympic CUAS challenge',
@@ -427,9 +521,22 @@ export function buildFlagshipScript(ctx: ScriptContext): StepDef[] {
       sub: '5 major venues across 469 sq mi',
       add: [{ tag: 'la', name: 'Los Angeles', key: 'laMetro', color: OVERLAY_COLORS.laMetro, opacity: 0.25 }],
       markers: [{ set: 'laVenues', offLat: 0, offLng: 0 }],
-      waitAfter: 4000,
+      waitAfter: 2500,
     },
-    // ── Bring LA to left of Gainesville with campus visible ──
+    // ── LA coverage ──
+    {
+      caption: 'LA Coverage Network',
+      sub: '763 sensor nodes to cover the Olympic zone',
+      clearMarkers: true,
+      showCoverageNodes: COV('laMetro'),
+      waitAfter: 3500,
+    },
+    {
+      clearCoverageNodes: true,
+      markers: [{ set: 'laVenues', offLat: 0, offLng: 0 }],
+      waitAfter: 500,
+    },
+    // ── LA at Gainesville scale ──
     {
       caption: 'LA Venues at Gainesville Scale',
       sub: 'Every Olympic venue fits inside the detection network',
@@ -446,18 +553,18 @@ export function buildFlagshipScript(ctx: ScriptContext): StepDef[] {
       markers: [{ set: 'laVenues', ...offTo(ctx, 'laMetro', bhg.lat, bhg.lng - 0.5) }],
       waitAfter: 4000,
     },
-    // ── Clean up LA before detection nodes ──
+    // ── Clean up LA ──
     {
       remove: ['la_bhg', 'campus_la'],
       clearMarkers: true,
       waitAfter: 500,
     },
-    // ── 27  Detection nodes ──
+    // ── Detection nodes ──
     {
       showNodes: true,
       waitAfter: 3000,
     },
-    // ── 28  Clean finale ──
+    // ── Finale ──
     {
       caption: 'Total Coverage',
       sub: 'The merged detection network — light green: 1-3 nodes, bright green: 4+ overlapping',
@@ -471,7 +578,14 @@ export function buildFlagshipScript(ctx: ScriptContext): StepDef[] {
     {
       caption: 'Gainesville, Florida',
       sub: 'Passive detection at scale. Total airspace awareness.',
-      waitAfter: 4000,
+      waitAfter: 3000,
+    },
+    // ── Point to Coverage Simulator ──
+    {
+      caption: 'Simulate Your Own Coverage',
+      sub: 'Try the Coverage Simulator to see how many nodes any area needs',
+      showCoverageTooltip: true,
+      waitAfter: 5000,
     },
   ];
 }

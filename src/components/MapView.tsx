@@ -6,7 +6,9 @@ import { TILE_LAYERS } from '../types';
 import { translateFeature, getCentroid, formatArea } from '../lib/geo';
 import type { ComparisonCenter } from '../hooks/useOverlays';
 import CoverageOverlay from './CoverageOverlay';
+import ViewshedOverlay from './ViewshedOverlay';
 import DroneAnimation, { type AnimData } from './DroneAnimation';
+import type { ViewshedResult } from '../lib/viewshed';
 
 function MapRefCallback({ onMapReady }: { onMapReady: (map: L.Map) => void }) {
   const map = useMap();
@@ -65,6 +67,7 @@ interface Props {
   nodesHidden?: boolean;
   showDroneAnim?: boolean;
   droneData?: unknown;
+  viewshedData?: ViewshedResult | null;
   onSelect: (id: string | null) => void;
   onMove: (id: string, dLat: number, dLng: number) => void;
   onMapReady?: (map: L.Map) => void;
@@ -259,6 +262,7 @@ export default function MapView({
   nodesHidden,
   showDroneAnim,
   droneData,
+  viewshedData,
   onSelect,
   onMove,
   onMapReady,
@@ -308,6 +312,8 @@ export default function MapView({
       {showCoverage && !nodesHidden && (
         <CoverageOverlay nodes={nodes} tiers={coverageTiers} />
       )}
+
+      <ViewshedOverlay viewshed={viewshedData ?? null} visible={!!viewshedData} />
 
       {!nodesHidden && nodes.map((node) => (
         <DetectionNodeMarker key={node.id} node={node} />

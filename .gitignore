@@ -1,0 +1,5 @@
+node_modules/
+dist/
+
+# Preprocessed LiDAR heightmap data (generated locally, too large for GitHub Pages)
+public/lidar/

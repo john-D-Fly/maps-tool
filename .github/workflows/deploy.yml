@@ -32,7 +32,9 @@ jobs:
         run: npm ci
 
       - name: Build
-        run: npm run build
+        run: |
+          export VITE_PASSWORD_HASH=$(echo -n "${{ secrets.PASSWORD_WEB }}" | sha256sum | cut -d' ' -f1)
+          npm run build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

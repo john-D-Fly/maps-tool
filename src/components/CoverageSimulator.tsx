@@ -1,18 +1,31 @@
 import { useState, useRef, useCallback } from 'react';
-import { Radar, X, Loader2, MapPin } from 'lucide-react';
+import { Radar, X, Loader2, MapPin, Mountain } from 'lucide-react';
 import L from 'leaflet';
 import type { Feature, Polygon, MultiPolygon } from 'geojson';
 import { fetchBoundaryByOsmId, fetchBoundaryBySearch } from '../lib/api';
 import { getBbox, calculateArea, createNUAIRCorridor } from '../lib/geo';
 import { generateHexGrid } from '../lib/coverageGrid';
 import { NODE_COLORS } from '../types';
+import {
+  findStaticArea,
+  loadStaticHeightmap,
+  loadBuildingMask,
+  heightmapToGrid,
+  buildElevationGridFromAPI,
+  type ElevationGrid,
+  type HeightmapBounds,
+} from '../lib/elevationService';
+import { computeViewshed, type ViewshedResult } from '../lib/viewshed';
 
 const COST_PER_NODE = 5000;
+const DEFAULT_SENSOR_HEIGHT_FT = 30;
+const DEFAULT_TARGET_ALT_FT = 100;
 
 interface Props {
   mapRef: React.MutableRefObject<L.Map | null>;
   currentNodeCount: number;
   coverageRadiusMiles: number;
+  onViewshedChange?: (vs: ViewshedResult | null) => void;
 }
 
 interface AreaOption {
@@ -24,12 +37,10 @@ interface AreaOption {
 }
 
 const AREAS: AreaOption[] = [
-  // Corridors
   { name: 'NUAIR BVLOS Corridor (Rome, NY)', localBuilder: () => createNUAIRCorridor() as Feature<Polygon | MultiPolygon> },
-  // Resorts / Private
   { name: 'Yellowstone Club (Big Sky, MT)', searchQuery: 'Yellowstone Club Big Sky Montana' },
   { name: 'Vail Ski Resort (Vail, CO)', searchQuery: 'Vail Ski Resort Colorado' },
-  // Cities
+  { name: 'UF Campus (Gainesville, FL)', searchQuery: 'University of Florida campus Gainesville' },
   { name: 'Gainesville, FL', osmType: 'relation', osmId: 118870 },
   { name: 'Manhattan', osmType: 'relation', osmId: 8398124 },
   { name: 'New York City (5 boroughs)', osmType: 'relation', osmId: 175905 },
@@ -39,7 +50,6 @@ const AREAS: AreaOption[] = [
   { name: 'Washington, DC', searchQuery: 'District of Columbia Washington' },
   { name: 'City of Chicago', searchQuery: 'City of Chicago Illinois' },
   { name: 'Bergen County, NJ', osmType: 'relation', osmId: 958930 },
-  // States
   { name: 'New Jersey', osmType: 'relation', osmId: 224951 },
   { name: 'Massachusetts', osmType: 'relation', osmId: 61315 },
   { name: 'New York State', osmType: 'relation', osmId: 61320 },
@@ -49,12 +59,30 @@ const AREAS: AreaOption[] = [
 
 type Phase = 'idle' | 'picking' | 'loading' | 'showing';
 
-export default function CoverageSimulator({ mapRef, currentNodeCount, coverageRadiusMiles }: Props) {
+interface SimResult {
+  name: string;
+  nodeCount: number;
+  areaSqMi: number;
+  coveragePct: number;
+  dualCoveragePct: number;
+  minOverlap: number;
+  lidarEnabled: boolean;
+  lidarCoveragePct?: number;
+  lidarOverlapPct?: number;
+  elevationStats?: { min: number; max: number; mean: number };
+  buildingCount?: number;
+  viewshed?: ViewshedResult;
+}
+
+export default function CoverageSimulator({ mapRef, currentNodeCount, coverageRadiusMiles, onViewshedChange }: Props) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [loadingMsg, setLoadingMsg] = useState('');
   const [minOverlap, setMinOverlap] = useState(2);
   const [radius, setRadius] = useState(coverageRadiusMiles);
-  const [result, setResult] = useState<{ name: string; nodeCount: number; areaSqMi: number; coveragePct: number; dualCoveragePct: number; minOverlap: number } | null>(null);
+  const [lidarEnabled, setLidarEnabled] = useState(false);
+  const [sensorHeight, setSensorHeight] = useState(DEFAULT_SENSOR_HEIGHT_FT);
+  const [targetAlt, setTargetAlt] = useState(DEFAULT_TARGET_ALT_FT);
+  const [result, setResult] = useState<SimResult | null>(null);
   const markersRef = useRef<L.Marker[]>([]);
   const boundaryLayerRef = useRef<L.GeoJSON | null>(null);
 
@@ -65,7 +93,44 @@ export default function CoverageSimulator({ mapRef, currentNodeCount, coverageRa
       boundaryLayerRef.current.remove();
       boundaryLayerRef.current = null;
     }
-  }, []);
+    onViewshedChange?.(null);
+  }, [onViewshedChange]);
+
+  async function runLidarAnalysis(
+    grid: ReturnType<typeof generateHexGrid>,
+    bboxBounds: HeightmapBounds,
+  ): Promise<{ elevGrid: ElevationGrid; vsResult: ViewshedResult }> {
+    const staticName = findStaticArea(bboxBounds);
+    let elevGrid: ElevationGrid;
+
+    if (staticName) {
+      setLoadingMsg('Loading preprocessed LiDAR heightmap…');
+      const hm = await loadStaticHeightmap(staticName);
+      let bm = null;
+      try { bm = await loadBuildingMask(staticName); } catch { /* optional */ }
+      elevGrid = heightmapToGrid(hm, bm);
+    } else {
+      setLoadingMsg('Fetching elevation data from USGS 3DEP…');
+      elevGrid = await buildElevationGridFromAPI(bboxBounds, 30);
+    }
+
+    setLoadingMsg('Computing line-of-sight viewshed…');
+    await new Promise((r) => setTimeout(r, 50));
+
+    const nodePositions = grid.nodes.map((n) => ({ lat: n.lat, lng: n.lng }));
+    const vsResult = computeViewshed(
+      nodePositions,
+      elevGrid,
+      sensorHeight,
+      targetAlt,
+      radius,
+      minOverlap,
+      elevGrid.rows,
+      elevGrid.cols,
+    );
+
+    return { elevGrid, vsResult };
+  }
 
   async function handleSelect(area: AreaOption) {
     const map = mapRef.current;
@@ -110,33 +175,76 @@ export default function CoverageSimulator({ mapRef, currentNodeCount, coverageRa
       }).addTo(map);
       boundaryLayerRef.current = layer;
 
-      for (let i = 0; i < grid.nodes.length; i++) {
+      const count = grid.nodes.length;
+      const nodeSize = count > 800 ? 3 : count > 300 ? 5 : count > 50 ? 10 : 16;
+      const dotSize = Math.max(2, nodeSize - (nodeSize > 6 ? 4 : 1));
+      const glow = nodeSize > 8 ? 6 : nodeSize > 4 ? 3 : 2;
+      const showCircles = sqMi <= 200 && !lidarEnabled;
+
+      for (let i = 0; i < count; i++) {
         const pt = grid.nodes[i];
         const color = NODE_COLORS[i % NODE_COLORS.length];
         const icon = L.divIcon({
           className: '',
-          html: `<div class="detection-node-marker">
-            <div class="detection-node-dot" style="background:${color};box-shadow:0 0 6px ${color}"></div>
+          html: `<div style="width:${nodeSize}px;height:${nodeSize}px;display:flex;align-items:center;justify-content:center">
+            <div style="width:${dotSize}px;height:${dotSize}px;border-radius:50%;background:${color};box-shadow:0 0 ${glow}px ${color}"></div>
           </div>`,
-          iconSize: [16, 16],
-          iconAnchor: [8, 8],
+          iconSize: [nodeSize, nodeSize],
+          iconAnchor: [nodeSize / 2, nodeSize / 2],
         });
         const marker = L.marker([pt.lat, pt.lng], { icon, interactive: false }).addTo(map);
         markersRef.current.push(marker);
 
-        const circle = L.circle([pt.lat, pt.lng], {
-          radius: radius * 1609.34,
-          color: '#22c55e',
-          weight: 0.5,
-          opacity: 0.2,
-          fillColor: '#86efac',
-          fillOpacity: 0.06,
-          interactive: false,
-        }).addTo(map);
-        markersRef.current.push(circle as unknown as L.Marker);
+        if (showCircles) {
+          const circle = L.circle([pt.lat, pt.lng], {
+            radius: radius * 1609.34,
+            color: '#22c55e',
+            weight: 0.5,
+            opacity: 0.2,
+            fillColor: '#86efac',
+            fillOpacity: 0.06,
+            interactive: false,
+          }).addTo(map);
+          markersRef.current.push(circle as unknown as L.Marker);
+        }
       }
 
-      setResult({ name: area.name, nodeCount: grid.samplePoints, areaSqMi: sqMi, coveragePct: grid.coveragePct, dualCoveragePct: grid.dualCoveragePct, minOverlap });
+      const simResult: SimResult = {
+        name: area.name,
+        nodeCount: grid.samplePoints,
+        areaSqMi: sqMi,
+        coveragePct: grid.coveragePct,
+        dualCoveragePct: grid.dualCoveragePct,
+        minOverlap,
+        lidarEnabled,
+      };
+
+      if (lidarEnabled) {
+        try {
+          const bboxBounds: HeightmapBounds = {
+            north: bboxMaxLat, south: bboxMinLat,
+            east: bboxMaxLng, west: bboxMinLng,
+          };
+          const { elevGrid, vsResult } = await runLidarAnalysis(grid, bboxBounds);
+          simResult.lidarCoveragePct = vsResult.coveragePct;
+          simResult.lidarOverlapPct = vsResult.overlapPct;
+          simResult.elevationStats = elevGrid.stats;
+          simResult.viewshed = vsResult;
+          if (elevGrid.buildingMask) {
+            let bc = 0;
+            for (let i = 0; i < elevGrid.buildingMask.length; i++) {
+              if (elevGrid.buildingMask[i]) bc++;
+            }
+            simResult.buildingCount = bc;
+          }
+          onViewshedChange?.(vsResult);
+        } catch (err) {
+          console.warn('LiDAR analysis failed, falling back to geometric:', err);
+          simResult.lidarEnabled = false;
+        }
+      }
+
+      setResult(simResult);
       setPhase('showing');
     } catch {
       setPhase('picking');
@@ -217,7 +325,58 @@ export default function CoverageSimulator({ mapRef, currentNodeCount, coverageRa
               <span className="text-xs text-green-400 font-bold font-mono w-12 text-right">{minOverlap}× nodes</span>
             </div>
           </div>
-          <div className="space-y-1 max-h-64 overflow-y-auto">
+
+          {/* LiDAR toggle */}
+          <div className="border-t border-white/10 pt-3 mb-3">
+            <button
+              onClick={() => setLidarEnabled(!lidarEnabled)}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg border transition-all text-xs ${
+                lidarEnabled
+                  ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300'
+                  : 'bg-white/5 border-white/10 text-white/50 hover:text-white/70 hover:bg-white/8'
+              }`}
+            >
+              <Mountain className="w-4 h-4 flex-shrink-0" />
+              <div className="text-left flex-1">
+                <div className="font-semibold">LiDAR Viewshed</div>
+                <div className={`text-[10px] ${lidarEnabled ? 'text-cyan-400/60' : 'text-white/30'}`}>
+                  Line-of-sight with terrain + buildings
+                </div>
+              </div>
+              <div className={`w-8 h-4.5 rounded-full relative transition-colors ${
+                lidarEnabled ? 'bg-cyan-500' : 'bg-white/20'
+              }`}>
+                <div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white shadow transition-transform ${
+                  lidarEnabled ? 'translate-x-4' : 'translate-x-0.5'
+                }`} />
+              </div>
+            </button>
+
+            {lidarEnabled && (
+              <div className="mt-2 space-y-2 px-1">
+                <div className="flex items-center gap-3">
+                  <label className="text-[11px] text-cyan-400/60 w-14">Sensor</label>
+                  <input
+                    type="range" min={10} max={100} step={5} value={sensorHeight}
+                    onChange={(e) => setSensorHeight(+e.target.value)}
+                    className="flex-1 h-1 accent-cyan-500"
+                  />
+                  <span className="text-xs text-cyan-400 font-bold font-mono w-12 text-right">{sensorHeight} ft</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="text-[11px] text-cyan-400/60 w-14">Target</label>
+                  <input
+                    type="range" min={50} max={400} step={25} value={targetAlt}
+                    onChange={(e) => setTargetAlt(+e.target.value)}
+                    className="flex-1 h-1 accent-cyan-500"
+                  />
+                  <span className="text-xs text-cyan-400 font-bold font-mono w-12 text-right">{targetAlt} ft</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-1 max-h-52 overflow-y-auto">
             {AREAS.map((area) => (
               <button
                 key={area.name}
@@ -238,18 +397,28 @@ export default function CoverageSimulator({ mapRef, currentNodeCount, coverageRa
   const costPerSqMi = result && result.areaSqMi > 0 ? totalCost / result.areaSqMi : 0;
   const gvilCost = currentNodeCount * COST_PER_NODE;
 
-  // showing
+  const displayCoverage = result?.lidarEnabled && result.lidarCoveragePct != null
+    ? result.lidarCoveragePct : result?.coveragePct ?? 0;
+  const displayOverlap = result?.lidarEnabled && result.lidarOverlapPct != null
+    ? result.lidarOverlapPct : result?.dualCoveragePct ?? 0;
+
   return (
     <>
-      {/* Stats panel — top left */}
-      <div className="absolute top-4 left-4 z-[1001] bg-gray-900/90 backdrop-blur-md border border-white/20 rounded-xl p-4 w-64 shadow-2xl">
+      <div className="absolute top-4 left-4 z-[1001] bg-gray-900/90 backdrop-blur-md border border-white/20 rounded-xl p-4 w-72 shadow-2xl">
         <div className="text-xs text-white/40 uppercase tracking-wider mb-2 font-semibold">Coverage Estimate</div>
         <h3 className="text-lg font-bold text-white mb-3">{result?.name}</h3>
+
+        {result?.lidarEnabled && (
+          <div className="flex items-center gap-2 mb-3 px-2 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
+            <Mountain className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="text-[11px] text-cyan-300 font-semibold">LiDAR Viewshed Active</span>
+          </div>
+        )}
 
         <div className="space-y-2">
           <div className="flex justify-between text-xs">
             <span className="text-white/50">Area</span>
-            <span className="text-white font-mono">{result?.areaSqMi.toFixed(0)} sq mi</span>
+            <span className="text-white font-mono">{result?.areaSqMi.toFixed(result.areaSqMi < 1 ? 2 : 0)} sq mi</span>
           </div>
           <div className="flex justify-between text-xs">
             <span className="text-white/50">Nodes Required</span>
@@ -259,14 +428,60 @@ export default function CoverageSimulator({ mapRef, currentNodeCount, coverageRa
             <span className="text-white/50">Coverage Radius</span>
             <span className="text-white font-mono">{radius} mi / node</span>
           </div>
-          <div className="flex justify-between text-xs">
-            <span className="text-white/50">Single Coverage</span>
-            <span className="text-white font-mono">{result?.coveragePct.toFixed(1)}%</span>
-          </div>
-          <div className="flex justify-between text-xs">
-            <span className="text-white/50">{result?.minOverlap}+ Node Coverage</span>
-            <span className={`font-bold font-mono ${(result?.dualCoveragePct ?? 0) >= 95 ? 'text-green-400' : 'text-amber-400'}`}>{result?.dualCoveragePct.toFixed(1)}%</span>
-          </div>
+
+          {result?.lidarEnabled ? (
+            <>
+              <div className="flex justify-between text-xs">
+                <span className="text-white/50">Viewshed Coverage</span>
+                <span className="text-cyan-400 font-bold font-mono">{displayCoverage.toFixed(1)}%</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-white/50">{result?.minOverlap}+ Node LoS</span>
+                <span className={`font-bold font-mono ${displayOverlap >= 95 ? 'text-green-400' : displayOverlap >= 70 ? 'text-amber-400' : 'text-red-400'}`}>
+                  {displayOverlap.toFixed(1)}%
+                </span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-white/50">Flat-Earth Estimate</span>
+                <span className="text-white/30 font-mono line-through">{result.coveragePct.toFixed(1)}%</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex justify-between text-xs">
+                <span className="text-white/50">Single Coverage</span>
+                <span className="text-white font-mono">{displayCoverage.toFixed(1)}%</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-white/50">{result?.minOverlap}+ Node Coverage</span>
+                <span className={`font-bold font-mono ${displayOverlap >= 95 ? 'text-green-400' : 'text-amber-400'}`}>
+                  {displayOverlap.toFixed(1)}%
+                </span>
+              </div>
+            </>
+          )}
+
+          {result?.elevationStats && (
+            <div className="border-t border-white/10 pt-2 mt-2">
+              <div className="text-[10px] text-cyan-400/50 uppercase tracking-wider mb-1">Terrain Profile</div>
+              <div className="flex justify-between text-xs">
+                <span className="text-white/50">Elevation Range</span>
+                <span className="text-white font-mono">
+                  {result.elevationStats.min.toFixed(0)}–{result.elevationStats.max.toFixed(0)} m
+                </span>
+              </div>
+              <div className="flex justify-between text-xs mt-1">
+                <span className="text-white/50">Mean Elevation</span>
+                <span className="text-white font-mono">{result.elevationStats.mean.toFixed(1)} m</span>
+              </div>
+              {result.buildingCount != null && result.buildingCount > 0 && (
+                <div className="flex justify-between text-xs mt-1">
+                  <span className="text-white/50">Building Cells</span>
+                  <span className="text-white font-mono">{result.buildingCount.toLocaleString()}</span>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="border-t border-white/10 pt-2 mt-2">
             <div className="flex justify-between text-xs">
@@ -318,7 +533,6 @@ export default function CoverageSimulator({ mapRef, currentNodeCount, coverageRa
         </div>
       </div>
 
-      {/* Bottom caption */}
       <div className="absolute bottom-0 left-0 right-0 z-[1000] pointer-events-none">
         <div className="bg-gradient-to-t from-black/70 via-black/30 to-transparent pt-12 pb-5 px-8">
           <div className="max-w-2xl mx-auto text-center">
@@ -326,7 +540,7 @@ export default function CoverageSimulator({ mapRef, currentNodeCount, coverageRa
               <span className="text-green-400">{result?.nodeCount.toLocaleString()}</span> nodes · <span className="text-green-400">${totalCost.toLocaleString()}</span>
             </h2>
             <p className="text-sm text-white/50 mt-1">
-              {result?.dualCoveragePct.toFixed(0)}% coverage ({result?.minOverlap}+ nodes) for {result?.name}
+              {displayOverlap.toFixed(0)}% {result?.lidarEnabled ? 'LoS' : ''} coverage ({result?.minOverlap}+ nodes) for {result?.name}
             </p>
           </div>
         </div>

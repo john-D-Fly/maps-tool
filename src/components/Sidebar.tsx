@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  Layers, Sparkles, ChevronDown, ChevronRight, Trash2, Globe2, Radio, Shield,
+  Layers, Sparkles, ChevronDown, ChevronRight, Trash2, Globe2, Radio, Shield, PanelLeftClose,
 } from 'lucide-react';
 import type { MapOverlay, TileLayerOption, DetectionNode, CoverageTier } from '../types';
 import type { Feature, Polygon, MultiPolygon } from 'geojson';
@@ -14,6 +14,7 @@ import ComparisonCenterPanel from './ComparisonCenterPanel';
 import TileSelector from './TileSelector';
 import ExportButton from './ExportButton';
 import CoveragePanel from './CoveragePanel';
+import PasswordGate from './PasswordGate';
 
 interface Props {
   overlays: MapOverlay[];
@@ -46,6 +47,12 @@ interface Props {
   showCoverage: boolean;
   onToggleCoverage: () => void;
   onToggleTier: (id: string) => void;
+  authAuthenticated: boolean;
+  authHasPassword: boolean;
+  onAuthVerify: (password: string) => Promise<boolean>;
+  onAuthLogout: () => void;
+  onOpenPrivate: () => void;
+  onCollapse: () => void;
 }
 
 export default function Sidebar({
@@ -79,6 +86,12 @@ export default function Sidebar({
   showCoverage,
   onToggleCoverage,
   onToggleTier,
+  authAuthenticated,
+  authHasPassword,
+  onAuthVerify,
+  onAuthLogout,
+  onOpenPrivate,
+  onCollapse,
 }: Props) {
   const [presetsOpen, setPresetsOpen] = useState(true);
   const [nodesOpen, setNodesOpen] = useState(true);
@@ -91,7 +104,21 @@ export default function Sidebar({
         <div className="flex items-center gap-2 mb-3">
           <Globe2 className="w-5 h-5 text-blue-400" />
           <h1 className="text-base font-bold text-white tracking-tight">MAPS</h1>
-          <span className="text-[10px] text-white/30 ml-auto">v1.0</span>
+          <span className="text-[10px] text-white/30 ml-auto mr-1">v1.0</span>
+          <PasswordGate
+            authenticated={authAuthenticated}
+            hasPassword={authHasPassword}
+            onVerify={onAuthVerify}
+            onLogout={onAuthLogout}
+            onOpenPrivate={onOpenPrivate}
+          />
+          <button
+            onClick={onCollapse}
+            className="p-1 rounded text-white/30 hover:text-white/60 hover:bg-white/10 transition-colors"
+            title="Collapse panel"
+          >
+            <PanelLeftClose className="w-4 h-4" />
+          </button>
         </div>
         <SearchBar onAdd={onAddOverlay} />
       </div>

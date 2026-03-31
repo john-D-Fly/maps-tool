@@ -1,10 +1,12 @@
 import { useState, useRef, useCallback } from 'react';
-import { Play, Square, Loader2, Film, SkipBack, SkipForward, Pause } from 'lucide-react';
+import { Play, Square, Loader2, Film, SkipBack, SkipForward, Pause, Radar } from 'lucide-react';
 import L from 'leaflet';
 import type { Feature, Polygon, MultiPolygon } from 'geojson';
 import type { MapOverlay, DetectionNode } from '../types';
+import { NODE_COLORS } from '../types';
 import { fetchBoundaryByOsmId, fetchBoundaryBySearch } from '../lib/api';
-import { getCentroid, createUFCampusFeature, createBrickellFeature, createMarALagoTFR, createBHGTFR, createPBINoUAS } from '../lib/geo';
+import { getCentroid, calculateArea, createUFCampusFeature, createBrickellFeature, createMarALagoTFR, createBHGTFR, createPBINoUAS } from '../lib/geo';
+import { generateHexGrid } from '../lib/coverageGrid';
 import {
   buildFlagshipScript, BOUNDARY_SOURCES, MARKER_SETS, SITE_COLORS,
   type StepDef, type ScriptContext, type SitePin,
@@ -87,11 +89,13 @@ export default function FlagshipAnimation({
   const [step, setStep] = useState(0);
   const [totalSteps, setTotalSteps] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [coverageTooltip, setCoverageTooltip] = useState(false);
   const abortRef = useRef(false);
   const skipRef = useRef<number | null>(null);
   const pauseRef = useRef(false);
   const idsRef = useRef<Record<string, string>>({});
   const tempMarkersRef = useRef<L.Marker[]>([]);
+  const coverageMarkersRef = useRef<(L.Marker | L.Circle)[]>([]);
   const stepsRef = useRef<StepDef[]>([]);
   const dataRef = useRef<Record<string, Feature<Polygon | MultiPolygon>>>({});
 
@@ -166,6 +170,54 @@ export default function FlagshipAnimation({
       });
       const marker = L.marker([node.lat, node.lng], { icon, interactive: false }).addTo(map);
       tempMarkersRef.current.push(marker);
+    }
+  }
+
+  function clearCoverageMarkers() {
+    for (const m of coverageMarkersRef.current) m.remove();
+    coverageMarkersRef.current = [];
+  }
+
+  function addCoverageNodesToMap(
+    map: L.Map,
+    boundary: Feature<Polygon | MultiPolygon>,
+    radiusMiles: number,
+    minOverlap: number,
+  ) {
+    const grid = generateHexGrid(boundary, radiusMiles, minOverlap);
+    const { sqMi } = calculateArea(boundary);
+    const count = grid.nodes.length;
+
+    const nodeSize = count > 800 ? 3 : count > 300 ? 5 : count > 50 ? 10 : 16;
+    const dotSize = Math.max(2, nodeSize - (nodeSize > 6 ? 4 : 1));
+    const glow = nodeSize > 8 ? 6 : nodeSize > 4 ? 3 : 2;
+
+    for (let i = 0; i < count; i++) {
+      const pt = grid.nodes[i];
+      const color = NODE_COLORS[i % NODE_COLORS.length];
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="width:${nodeSize}px;height:${nodeSize}px;display:flex;align-items:center;justify-content:center">
+          <div style="width:${dotSize}px;height:${dotSize}px;border-radius:50%;background:${color};box-shadow:0 0 ${glow}px ${color}"></div>
+        </div>`,
+        iconSize: [nodeSize, nodeSize],
+        iconAnchor: [nodeSize / 2, nodeSize / 2],
+      });
+      const marker = L.marker([pt.lat, pt.lng], { icon, interactive: false }).addTo(map);
+      coverageMarkersRef.current.push(marker);
+
+      if (sqMi <= 200) {
+        const circle = L.circle([pt.lat, pt.lng], {
+          radius: radiusMiles * 1609.34,
+          color: '#22c55e',
+          weight: 0.5,
+          opacity: 0.15,
+          fillColor: '#86efac',
+          fillOpacity: 0.04,
+          interactive: false,
+        }).addTo(map);
+        coverageMarkersRef.current.push(circle);
+      }
     }
   }
 
@@ -265,6 +317,18 @@ export default function FlagshipAnimation({
       const c = stepDef.animate.find(a => a.concurrent)!.concurrent!;
       map.setView([c.lat, c.lng], c.zoom);
     }
+    if (stepDef.clearCoverageNodes) clearCoverageMarkers();
+    if (stepDef.showCoverageNodes) {
+      const entries = Array.isArray(stepDef.showCoverageNodes)
+        ? stepDef.showCoverageNodes
+        : [stepDef.showCoverageNodes];
+      clearCoverageMarkers();
+      for (const entry of entries) {
+        const boundary = data[entry.boundaryKey];
+        if (boundary) addCoverageNodesToMap(map, boundary, entry.radiusMiles, entry.minOverlap);
+      }
+    }
+    if (stepDef.showCoverageTooltip) setCoverageTooltip(true);
     if (stepDef.showNodes && nodes.length > 0) addNodeMarkersToMap(map);
   }
 
@@ -344,6 +408,21 @@ export default function FlagshipAnimation({
       checkAbort();
     }
 
+    if (stepDef.clearCoverageNodes) clearCoverageMarkers();
+
+    if (stepDef.showCoverageNodes) {
+      const entries = Array.isArray(stepDef.showCoverageNodes)
+        ? stepDef.showCoverageNodes
+        : [stepDef.showCoverageNodes];
+      clearCoverageMarkers();
+      for (const entry of entries) {
+        const boundary = data[entry.boundaryKey];
+        if (boundary) addCoverageNodesToMap(map, boundary, entry.radiusMiles, entry.minOverlap);
+      }
+    }
+
+    if (stepDef.showCoverageTooltip) setCoverageTooltip(true);
+
     if (stepDef.showNodes) {
       if (nodes.length > 0) {
         setCaption('Detection Network');
@@ -372,6 +451,8 @@ export default function FlagshipAnimation({
     setAutoCenter(false);
     clearAll();
     clearTempMarkers();
+    clearCoverageMarkers();
+    setCoverageTooltip(false);
     idsRef.current = {};
     setPhase('playing');
 
@@ -400,9 +481,10 @@ export default function FlagshipAnimation({
         if (skipRef.current !== null) {
           i = Math.max(0, Math.min(skipRef.current, steps.length - 1));
           skipRef.current = null;
-          // Rebuild state: clear everything and replay from 0 to i
           clearAll();
           clearTempMarkers();
+          clearCoverageMarkers();
+          setCoverageTooltip(false);
           idsRef.current = {};
           setNodesHidden(false);
           for (let j = 0; j <= i; j++) {
@@ -451,6 +533,8 @@ export default function FlagshipAnimation({
     pauseRef.current = false;
     setPaused(false);
     clearTempMarkers();
+    clearCoverageMarkers();
+    setCoverageTooltip(false);
     setNodesHidden(false);
     setPhase('idle');
     setCaption('');
@@ -575,6 +659,19 @@ export default function FlagshipAnimation({
           Stop
         </button>
       </div>
+
+      {coverageTooltip && (
+        <div className="absolute top-16 right-56 z-[1002] animate-fade-in">
+          <div className="relative bg-emerald-600/90 backdrop-blur-md border border-emerald-400/40 rounded-xl px-5 py-3 shadow-2xl max-w-[220px]">
+            <div className="flex items-center gap-2 mb-1">
+              <Radar className="w-4 h-4 text-emerald-200" />
+              <span className="text-sm font-bold text-white">Try It Yourself</span>
+            </div>
+            <p className="text-xs text-emerald-100/80">Simulate coverage for any area with the Coverage Simulator</p>
+            <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-b-[8px] border-b-emerald-600/90" />
+          </div>
+        </div>
+      )}
 
       {phase === 'done' && (
         <button
