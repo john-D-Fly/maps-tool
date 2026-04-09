@@ -3,7 +3,7 @@ import { Radar, X, Loader2, MapPin, Mountain } from 'lucide-react';
 import L from 'leaflet';
 import type { Feature, Polygon, MultiPolygon } from 'geojson';
 import { fetchBoundaryByOsmId, fetchBoundaryBySearch } from '../lib/api';
-import { getBbox, calculateArea, createNUAIRCorridor } from '../lib/geo';
+import { getBbox, calculateArea, createNUAIRCorridor, createUFCampusBoundary } from '../lib/geo';
 import { generateHexGrid } from '../lib/coverageGrid';
 import { NODE_COLORS } from '../types';
 import {
@@ -40,7 +40,7 @@ const AREAS: AreaOption[] = [
   { name: 'NUAIR BVLOS Corridor (Rome, NY)', localBuilder: () => createNUAIRCorridor() as Feature<Polygon | MultiPolygon> },
   { name: 'Yellowstone Club (Big Sky, MT)', searchQuery: 'Yellowstone Club Big Sky Montana' },
   { name: 'Vail Ski Resort (Vail, CO)', searchQuery: 'Vail Ski Resort Colorado' },
-  { name: 'UF Campus (Gainesville, FL)', searchQuery: 'University of Florida campus Gainesville' },
+  { name: 'UF Campus (Gainesville, FL)', localBuilder: () => createUFCampusBoundary() as Feature<Polygon | MultiPolygon> },
   { name: 'Gainesville, FL', osmType: 'relation', osmId: 118870 },
   { name: 'Manhattan', osmType: 'relation', osmId: 8398124 },
   { name: 'New York City (5 boroughs)', osmType: 'relation', osmId: 175905 },

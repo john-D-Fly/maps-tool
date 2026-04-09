@@ -225,6 +225,28 @@ export function createBrickellFeature(): Feature<Polygon> {
   };
 }
 
+export function createUFCampusBoundary(): Feature<Polygon> {
+  // Matches the preprocessed LiDAR heightmap extent
+  const north = 29.658;
+  const south = 29.636;
+  const west = -82.370;
+  const east = -82.335;
+  return {
+    type: 'Feature',
+    properties: { name: 'UF Campus' },
+    geometry: {
+      type: 'Polygon',
+      coordinates: [[
+        [west, north],
+        [east, north],
+        [east, south],
+        [west, south],
+        [west, north],
+      ]],
+    },
+  };
+}
+
 export function compareAreas(a: MapOverlay, b: MapOverlay): string {
   const ratio = a.areaSqMi / b.areaSqMi;
   if (ratio > 1) {
