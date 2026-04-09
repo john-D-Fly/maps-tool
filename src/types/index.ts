@@ -118,12 +118,12 @@ export const PRODUCTS: ProductConfig[] = [
     radiusMiles: 3,
     pricing: {
       subscription: {
-        upfront: 0, annual: 37_500, contractYears: 2,
-        twoYearTotal: 75_000, hardwareOwnership: false, obsolescenceRisk: false,
+        upfront: 0, annual: 3_750, contractYears: 2,
+        twoYearTotal: 7_500, hardwareOwnership: false, obsolescenceRisk: false,
       },
       capex: {
-        upfront: 35_000, annual: 20_000, contractYears: 0,
-        twoYearTotal: 75_000, hardwareOwnership: true, obsolescenceRisk: true,
+        upfront: 3_500, annual: 2_000, contractYears: 0,
+        twoYearTotal: 7_500, hardwareOwnership: true, obsolescenceRisk: true,
       },
     },
   },
@@ -134,12 +134,12 @@ export const PRODUCTS: ProductConfig[] = [
     radiusMiles: 1.5,
     pricing: {
       subscription: {
-        upfront: 0, annual: 55_000, contractYears: 2,
-        twoYearTotal: 110_000, hardwareOwnership: false, obsolescenceRisk: false,
+        upfront: 0, annual: 5_500, contractYears: 2,
+        twoYearTotal: 11_000, hardwareOwnership: false, obsolescenceRisk: false,
       },
       capex: {
-        upfront: 50_000, annual: 30_000, contractYears: 0,
-        twoYearTotal: 110_000, hardwareOwnership: true, obsolescenceRisk: true,
+        upfront: 5_000, annual: 3_000, contractYears: 0,
+        twoYearTotal: 11_000, hardwareOwnership: true, obsolescenceRisk: true,
       },
     },
   },
