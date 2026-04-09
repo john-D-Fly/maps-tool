@@ -4,10 +4,15 @@ const HASH = import.meta.env.VITE_PASSWORD_HASH as string | undefined;
 const SESSION_KEY = 'maps_private_auth';
 
 async function sha256(text: string): Promise<string> {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+    return Array.from(new Uint8Array(buf))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+  // crypto.subtle unavailable (non-secure context) — warn and reject
+  console.warn('crypto.subtle is not available. HTTPS is required for authentication.');
+  throw new Error('Secure context (HTTPS) is required for login.');
 }
 
 export function useAuth() {

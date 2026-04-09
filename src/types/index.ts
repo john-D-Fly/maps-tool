@@ -92,6 +92,59 @@ export const TILE_LAYERS: Record<TileLayerOption, { url: string; attribution: st
   },
 };
 
+export type ProductTier = 'remote-id' | 'enhanced-detection';
+export type PricingModel = 'subscription' | 'capex';
+
+export interface ProductConfig {
+  id: ProductTier;
+  name: string;
+  tagline: string;
+  radiusMiles: number;
+  pricing: Record<PricingModel, {
+    upfront: number;
+    annual: number;
+    contractYears: number;
+    twoYearTotal: number;
+    hardwareOwnership: boolean;
+    obsolescenceRisk: boolean;
+  }>;
+}
+
+export const PRODUCTS: ProductConfig[] = [
+  {
+    id: 'remote-id',
+    name: 'Remote ID',
+    tagline: '3-mile detection range',
+    radiusMiles: 3,
+    pricing: {
+      subscription: {
+        upfront: 0, annual: 37_500, contractYears: 2,
+        twoYearTotal: 75_000, hardwareOwnership: false, obsolescenceRisk: false,
+      },
+      capex: {
+        upfront: 35_000, annual: 20_000, contractYears: 0,
+        twoYearTotal: 75_000, hardwareOwnership: true, obsolescenceRisk: true,
+      },
+    },
+  },
+  {
+    id: 'enhanced-detection',
+    name: 'Enhanced Detection',
+    tagline: '1.5-mile detection range',
+    radiusMiles: 1.5,
+    pricing: {
+      subscription: {
+        upfront: 0, annual: 55_000, contractYears: 2,
+        twoYearTotal: 110_000, hardwareOwnership: false, obsolescenceRisk: false,
+      },
+      capex: {
+        upfront: 50_000, annual: 30_000, contractYears: 0,
+        twoYearTotal: 110_000, hardwareOwnership: true, obsolescenceRisk: true,
+      },
+    },
+  },
+];
+
 export const OVERLAY_COLORS = [
   '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
   '#ec4899', '#06b6d4', '#f97316', '#14b8a6', '#6366f1',

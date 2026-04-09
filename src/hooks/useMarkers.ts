@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { DetectionNode } from '../types';
 import { NODE_COLORS } from '../types';
+import { generateId } from '../lib/geo';
 
 const STORAGE_KEY = 'maps-detection-nodes';
 
@@ -52,7 +53,7 @@ export function useMarkers() {
   const addNode = useCallback((lat: number, lng: number) => {
     const idx = nodeIndex++;
     const node: DetectionNode = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       name: `Node ${idx + 1}`,
       lat,
       lng,

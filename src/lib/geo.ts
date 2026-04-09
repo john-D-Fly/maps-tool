@@ -3,6 +3,16 @@ import centroid from '@turf/centroid';
 import bbox from '@turf/bbox';
 import type { Feature, Polygon, MultiPolygon, Position } from 'geojson';
 import type { MapOverlay } from '../types';
+
+export function generateId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
 import { OVERLAY_COLORS } from '../types';
 
 const SQ_M_TO_SQ_KM = 1e-6;
@@ -110,7 +120,7 @@ export function createOverlay(
   const { sqKm, sqMi } = calculateArea(feature);
 
   return {
-    id: crypto.randomUUID(),
+    id: generateId(),
     name,
     originalName: name,
     feature,
